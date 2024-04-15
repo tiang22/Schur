@@ -3,7 +3,15 @@ uuid = "e6055595-da08-4564-b1ed-fc7e0a967f69"
 authors = ["Rose-max111"]
 version = "1.0.0-DEV"
 
+[deps]
+DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+DormandPrince = "5e45e72d-22b8-4dd0-9c8b-f96714864bcd"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
 [compat]
+LinearAlgebra = "1"
 julia = "1.10"
 
 [extras]
