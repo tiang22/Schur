@@ -123,12 +123,14 @@ function CG_matrix(twoJ, nSTAT::Int, nP::Int, usedSTAT::Int, nowP::Int)
         push!(real_input_vec_position, i * (2^(nSTAT - usedSTAT)) * (2^(nowP)))
         push!(real_input_vec_position, i * (2^(nSTAT - usedSTAT)) * (2^(nowP)) + 1)
     end
-    Jplusqubits = count_bits(twoJ+1)
+    # calculate the number of used state qubits for Jplus space, minus one because of n->log2(n-1)
+    Jplusqubits = count_bits(twoJ + 2 - 1)
     real_output_vec_position_Jplus = []
     for i in 0:(twoJ+1)
         push!(real_output_vec_position_Jplus, i * (2^(nSTAT - Jplusqubits)) * (2^(nowP)))
     end
-    Jminusqubits = count_bits(twoJ-1)
+    # calculate the number of used state qubits for Jminus space, minus one because of n->log2(n-1)
+    Jminusqubits = count_bits(twoJ - 1)
     real_output_vec_position_Jminus = []
     for i in 0:(twoJ-1)
         push!(real_output_vec_position_Jminus, i * (2^(nSTAT - Jminusqubits)) * (2^(nowP)) + 1)
@@ -181,4 +183,35 @@ function control_CG_transform(twoJ, nSP::Int, nSTAT::Int, nP::Int, usedSTAT::Int
     return ret_mat
 end
 
+function noise_time_evolution(nSP::Int, nP::Int, nSTAT::Int, delta_t)
+    return sparse_identity(nSP + nP + nSTAT) # no noise firstly
+end
 
+function Schur_Transform(n::Int)
+    nSP = n+1
+    nP = n
+    nSTAT = int(ceil(log2(n+1)))
+    ret_mat = sparse_identity(nSP+nP+nSTAT)
+
+    for Time in 1:n-1
+        # calculate which J is vaild
+        nowJ = []
+        if Time&1 == 1
+            for i in 1:2:Time
+                push!(nowJ, i)
+            end
+        else
+            for i in 0:2:Time
+                push!(nowJ, i)
+            end
+        end
+
+        for twoJ in nowJ
+            ret_mat = control_CG_transform(twoJ, nSP, nSTAT, nP, count_bits(twoJ), Time+1) * ret_mat
+            ret_mat = noise_time_evolution * ret_mat
+        end
+        
+        for twoJ in nowJ
+            ret_mat = 
+    end
+end
