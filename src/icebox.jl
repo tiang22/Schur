@@ -98,12 +98,12 @@ function CG_Coef(j1, j2)
 end
 
 
-function sparse_identity(n::Int)
+function sparse_identity(n)
     return spdiagm(0 => ones(ComplexF64, 2^n))
 end
 
 # write an algorithm to count the number of bits of a number
-function count_bits(n::Int)
+function count_bits(n)
     count = 0
     if n == 0
         return 1
@@ -116,7 +116,7 @@ function count_bits(n::Int)
 end
 
 # write an algorithm to generate the CG matrix with the given twoJ, nSTAT, nP, usedSTAT, nowP
-function CG_matrix(twoJ, nSTAT::Int, nP::Int, usedSTAT::Int, nowP::Int)
+function CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP)
 
     real_input_vec_position = []
     for i in 0:twoJ
@@ -167,7 +167,7 @@ function CG_matrix(twoJ, nSTAT::Int, nP::Int, usedSTAT::Int, nowP::Int)
     return ret_mat
 end
 
-function control_CG_transform(twoJ, nSP::Int, nSTAT::Int, nP::Int, usedSTAT::Int, nowP::Int)
+function control_CG_transform(twoJ, nSP, nSTAT, nP, usedSTAT, nowP)
     U = kron(CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP), sparse_identity(nP-nowP))
     I = sparse_identity(nSTAT + nP)
 
@@ -183,16 +183,77 @@ function control_CG_transform(twoJ, nSP::Int, nSTAT::Int, nP::Int, usedSTAT::Int
     return ret_mat
 end
 
-function noise_time_evolution(nSP::Int, nP::Int, nSTAT::Int, delta_t)
+function noise_time_evolution(nSP, nP, nSTAT, delta_t)
     return sparse_identity(nSP + nP + nSTAT) # no noise firstly
 end
 
-function Schur_Transform(n::Int)
+
+# the first step of control swap
+function control_swap_1(nSP, nP, nSTAT, ctrla, octrlb, oper)
+    pre_mat = sparse_identity(ctrla-1)
+    oper_mat1 = kron(kron(sparse([1],[1],[1], 2, 2), sparse_identity(octrlb - oper)), sparse([1],[1],[1], 2, 2))
+    oper_mat2 = kron(kron(kron(sparse([2],[2],[1], 2, 2), sparse([1,2], [2,1], [1,1], 2, 2)), sparse_identity(octrlb - oper - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat3 = kron(kron(sparse([1],[1],[1], 2, 2), sparse_identity(octrlb - oper)), sparse([2],[2],[1], 2, 2))
+    oper_mat4 = kron(kron(sparse([2],[2],[1], 2, 2), sparse_identity(octrlb - oper)), sparse([2],[2],[1], 2, 2))
+    suf_mat = sparse_identity(nSP + nP + nSTAT - octrlb)
+    opermat = oper_mat1 + oper_mat2 + oper_mat3 + oper_mat4
+    return kron(kron(pre_mat, opermat), suf_mat)
+end
+
+# the second step of control swap
+function control_swap_2(nSP, nP, nSTAT, ctrla, ctrlb, oper)
+    pre_mat = sparse_identity(ctrla - 2)
+    oper_mat1 = kron(kron(kron(sparse_identity(1),sparse([1],[1],[1], 2, 2)), sparse_identity(ctrlb - ctrla - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat2 = kron(kron(kron(sparse_identity(1),sparse([2],[2],[1], 2, 2)), sparse_identity(ctrlb - ctrla - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat3 = kron(kron(kron(sparse_identity(1),sparse([1],[1],[1], 2, 2)), sparse_identity(ctrlb - ctrla - 1)), sparse([2],[2],[1], 2, 2))
+    oper_mat4 = kron(kron(kron(sparse([1, 2], [2, 1], [1, 1], 2, 2),sparse([2],[2],[1], 2, 2)), sparse_identity(ctrlb - ctrla - 1)), sparse([2],[2],[1], 2, 2))
+    suf_mat = sparse_identity(nSP + nP + nSTAT - ctrlb)
+    opermat = oper_mat1 + oper_mat2 + oper_mat3 + oper_mat4
+    return kron(kron(pre_mat, opermat), suf_mat)
+end
+
+# the third step of control swap
+function control_swap_3(nSP, nP, nSTAT, ctrla, ctrlb, oper)
+    pre_mat = sparse_identity(ctrla - 1)
+    oper_mat1 = kron(kron(kron(sparse([1],[1],[1], 2, 2), sparse_identity(1)), sparse_identity(ctrlb - oper - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat2 = kron(kron(kron(sparse([2],[2],[1], 2, 2), sparse_identity(1)), sparse_identity(ctrlb - oper - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat3 = kron(kron(kron(sparse([1],[1],[1], 2, 2), sparse_identity(1)), sparse_identity(ctrlb - oper - 1)), sparse([2],[2],[1], 2, 2))
+    oper_mat4 = kron(kron(kron(sparse([2],[2],[1], 2, 2), sparse([1, 2], [2, 1], [1, 1], 2, 2)), sparse_identity(ctrlb - oper - 1)), sparse([2],[2],[1], 2, 2))
+    suf_mat = sparse_identity(nSP + nP + nSTAT - ctrlb)
+    opermat = oper_mat1 + oper_mat2 + oper_mat3 + oper_mat4
+    return kron(kron(pre_mat, opermat), suf_mat)
+end
+
+# the fourth step of control swap
+function control_swap_4(nSP, nP, nSTAT, ctrla, octrlb, oper)
+    pre_mat = sparse_identity(ctrla - 2)
+    oper_mat1 = kron(kron(kron(sparse_identity(1),sparse([1],[1],[1], 2, 2)), sparse_identity(octrlb - ctrla - 1)), sparse([1],[1],[1], 2, 2))
+    oper_mat2 = kron(kron(kron(sparse_identity(1),sparse([1],[1],[1], 2, 2)), sparse_identity(octrlb - ctrla - 1)), sparse([2],[2],[1], 2, 2))
+    oper_mat3 = kron(kron(kron(sparse_identity(1),sparse([2],[2],[1], 2, 2)), sparse_identity(octrlb - ctrla - 1)), sparse([2],[2],[1], 2, 2))
+    oper_mat4 = kron(kron(kron(sparse([1, 2], [2, 1], [1, 1], 2, 2),sparse([2],[2],[1], 2, 2)), sparse_identity(octrlb - ctrla - 1)), sparse([1],[1],[1], 2, 2))
+    suf_mat = sparse_identity(nSP + nP + nSTAT - octrlb)
+    opermat = oper_mat1 + oper_mat2 + oper_mat3 + oper_mat4
+    return kron(kron(pre_mat, opermat), suf_mat)
+end
+
+function FirstTransform(nSP, nP, nSTAT, first_qubit)
+    print(nSP, nP, nSTAT, first_qubit)
+    twoJ = 1
+    state = nSP + nP + 1
+    ret_mat = kron(sparse([1,2], [2,1], [1, 1], 2, 2), sparse_identity(nSP+nP+nSTAT - 1))
+    oper_mat1 = kron(kron(sparse_identity(first_qubit - 1), sparse([1], [1], [1], 2, 2)), sparse_identity(nSP + nP + nSTAT - first_qubit))
+    oper_mat2 = kron(kron(kron(kron(sparse_identity(first_qubit - 1), sparse([2], [2], [1], 2, 2)), sparse_identity(state - first_qubit - 1)), sparse([1,2], [2,1], [1,1], 2, 2)), sparse_identity(nSTAT - 1))
+    oper_mat = oper_mat1 + oper_mat2
+    return oper_mat * ret_mat
+end
+
+function Schur_Transform(n)
     nSP = n+1
     nP = n
-    nSTAT = int(ceil(log2(n+1)))
+    nSTAT = convert(Int64, ceil(log2(n+1)))
     ret_mat = sparse_identity(nSP+nP+nSTAT)
 
+    ret_mat = FirstTransform(nSP, nP, nSTAT, nSP+1) * ret_mat
     for Time in 1:n-1
         # calculate which J is vaild
         nowJ = []
@@ -208,10 +269,17 @@ function Schur_Transform(n::Int)
 
         for twoJ in nowJ
             ret_mat = control_CG_transform(twoJ, nSP, nSTAT, nP, count_bits(twoJ), Time+1) * ret_mat
-            ret_mat = noise_time_evolution * ret_mat
+            # ret_mat = noise_time_evolution * ret_mat  # Noise case
         end
         
         for twoJ in nowJ
-            ret_mat = 
+            ret_mat = control_swap_1(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ+1) * ret_mat
+            ret_mat = control_swap_2(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ-1) * ret_mat
+            ret_mat = control_swap_3(nSP, nP, nSTAT, twoJ-1, nSP+Time+1, twoJ) * ret_mat
+            ret_mat = control_swap_4(nSP, nP, nSTAT, twoJ+1, nSP+Time+1, twoJ) * ret_mat
+        end
     end
+    return ret_mat
 end
+
+Schur_Transform(2)
