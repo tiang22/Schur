@@ -15,7 +15,7 @@ function transinTwo(total_length, number)
 end
 
 function middle_test(oper_mat)
-    initial_state = sparse([2^(2)*1 + 2^(3)*1 + 2^(4)*1 + 1], [1], [1], 2^(4 + 3 + 2), 1)
+    initial_state = sparse([2^(2) * 1 + 1], [1], [1], 2^(4 + 3 + 2), 1)
     final_state = oper_mat * initial_state
     final_state = Matrix(final_state)
     for nz in range(1, size(final_state)[1])
@@ -181,11 +181,21 @@ function CG_matrix(twoJ, nP, nSTAT, usedSTAT, nowP)
         ret_mat[filter_input[i] + 1, filter_output[i] + 1] = 1
     end
 
-    for freequbits in 0:(2^(nP - nowP) - 1)
+    for freequbits in 1:(2^(nP - nowP) - 1)
+        for i in 1:length(real_output_vec_position)
+            ret_mat[real_output_vec_position[i] + freequbits * 2^(nSTAT) +  1, real_output_vec_position[i] + freequbits * 2^(nSTAT) +  1] = 0
+            ret_mat[real_input_vec_position[i] + freequbits * 2^(nSTAT) +  1, real_input_vec_position[i] + freequbits * 2^(nSTAT) +  1] = 0
+        end
+
         for i in 1:length(real_output_vec_position)
             for j in 1:length(real_input_vec_position)
-                ret_mat[real_output_vec_position[i] + 1, real_input_vec_position[j] + 1] = mat[(i-1) % (2*twoJ + 2) + 1, (j-1) % (2*twoJ+2) + 1]
+                ret_mat[real_output_vec_position[i] + freequbits * 2^(nSTAT) + 1, real_input_vec_position[j] + freequbits * 2^(nSTAT) + 1] = mat[i, j]
         end
+
+        for i in 1:length(filter_output)
+            ret_mat[filter_input[i] + freequbits * 2^(nSTAT) + 1, filter_output[i] + freequbits * 2^(nSTAT) + 1] = 1
+        end
+    end
     end
 
     return ret_mat
