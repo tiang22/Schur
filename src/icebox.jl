@@ -8,7 +8,22 @@ include("simulator.jl")
 
 
 using PyCall
+function transinTwo(total_length, number)
+    binary_string = string(number, base = 2)
+    padded_string = lpad(binary_string, total_length, '0')
+    return padded_string
+end
 
+function middle_test(oper_mat)
+    initial_state = sparse([2^(2)*1 + 2^(3)*1 + 2^(4)*1 + 1], [1], [1], 2^(4 + 3 + 2), 1)
+    final_state = oper_mat * initial_state
+    final_state = Matrix(final_state)
+    for nz in range(1, size(final_state)[1])
+        if final_state[nz][1] != 0
+            println(nz - 1, " ", transinTwo(4 + 3 + 2, nz - 1), " ", final_state[nz][1])
+        end
+    end
+end
 
 py"""
 import numpy as np
@@ -116,27 +131,29 @@ function count_bits(n)
 end
 
 # write an algorithm to generate the CG matrix with the given twoJ, nSTAT, nP, usedSTAT, nowP
-function CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP)
+function CG_matrix(twoJ, nP, nSTAT, usedSTAT, nowP)
 
     real_input_vec_position = []
-    for i in 0:twoJ
-        push!(real_input_vec_position, i * (2^(nSTAT - usedSTAT)) * (2^(nowP)))
-        push!(real_input_vec_position, i * (2^(nSTAT - usedSTAT)) * (2^(nowP)) + 1)
+    for freequbits in 0:0
+        for i in 0:twoJ
+            push!(real_input_vec_position, 2^(nP - nowP + nSTAT) * 0 + freequbits * 2^(nSTAT) + i * 2^(nSTAT - usedSTAT)) # 0 0...0 (state)
+            push!(real_input_vec_position, 2^(nP - nowP + nSTAT) * 1 + freequbits * 2^(nSTAT) + i * 2^(nSTAT - usedSTAT)) # 1 0...0 (state)
+        end
     end
     # calculate the number of used state qubits for Jplus space, minus one because of n->log2(n-1)
     Jplusqubits = count_bits(twoJ + 2 - 1)
-    real_output_vec_position_Jplus = []
-    for i in 0:(twoJ+1)
-        push!(real_output_vec_position_Jplus, i * (2^(nSTAT - Jplusqubits)) * (2^(nowP)))
-    end
-    # calculate the number of used state qubits for Jminus space, minus one because of n->log2(n-1)
     Jminusqubits = count_bits(twoJ - 1)
-    real_output_vec_position_Jminus = []
-    for i in 0:(twoJ-1)
-        push!(real_output_vec_position_Jminus, i * (2^(nSTAT - Jminusqubits)) * (2^(nowP)) + 1)
+    real_output_vec_position = []
+    for freequbits in 0:0
+        for i in 0:(twoJ+1)
+            push!(real_output_vec_position, 2^(nP - nowP + nSTAT) * 0 + freequbits * 2^(nSTAT) + i * 2^(nSTAT - Jplusqubits))
+        end
+        # calculate the number of used state qubits for Jminus space, minus one because of n->log2(n-1)
+        for i in 0:(twoJ-1)
+            push!(real_output_vec_position, 2^(nP - nowP + nSTAT) * 1 + freequbits * 2^(nSTAT) + i * 2^(nSTAT - Jminusqubits))
+        end
     end
 
-    real_output_vec_position = [real_output_vec_position_Jplus...,real_output_vec_position_Jminus...]
 
     # println(real_output_vec_position)
     # println(real_input_vec_position)
@@ -144,7 +161,7 @@ function CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP)
     # println(mat' * mat)
 
 
-    ret_mat = sparse_identity(nSTAT + nowP)
+    ret_mat = sparse_identity(nP - nowP + 1 + nSTAT)
     
     for i in 1:length(real_output_vec_position)
         ret_mat[real_output_vec_position[i] + 1, real_output_vec_position[i] + 1] = 0
@@ -153,7 +170,7 @@ function CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP)
 
     for i in 1:length(real_output_vec_position)
         for j in 1:length(real_input_vec_position)
-            ret_mat[real_output_vec_position[i] + 1, real_input_vec_position[j] + 1] = mat[i, j]
+            ret_mat[real_output_vec_position[i] + 1, real_input_vec_position[j] + 1] = mat[(i-1) % (2*twoJ + 2) + 1, (j-1) % (2*twoJ+2) + 1]
         end
     end
 
@@ -164,17 +181,24 @@ function CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP)
         ret_mat[filter_input[i] + 1, filter_output[i] + 1] = 1
     end
 
+    for freequbits in 0:(2^(nP - nowP) - 1)
+        for i in 1:length(real_output_vec_position)
+            for j in 1:length(real_input_vec_position)
+                ret_mat[real_output_vec_position[i] + 1, real_input_vec_position[j] + 1] = mat[(i-1) % (2*twoJ + 2) + 1, (j-1) % (2*twoJ+2) + 1]
+        end
+    end
+
     return ret_mat
 end
 
-function control_CG_transform(twoJ, nSP, nSTAT, nP, usedSTAT, nowP)
-    U = kron(CG_matrix(twoJ, nSTAT, nP, usedSTAT, nowP), sparse_identity(nP-nowP))
-    I = sparse_identity(nSTAT + nP)
+function control_CG_transform(twoJ, nSP, nP, nSTAT, usedSTAT, nowP)  # spin 2J is qubit (2J+1)
+    U = kron(sparse_identity(nowP - 1), CG_matrix(twoJ, nP, nSTAT, usedSTAT, nowP))
+    I = sparse_identity(nP + nSTAT)
 
     control_0_mat = sparse([1],[1],[1], 2, 2)
     control_1_mat = sparse([2],[2],[1], 2, 2)
-    pre_identity_SP = sparse_identity(twoJ - 1)
-    suf_identity_SP = sparse_identity(nSP - twoJ)
+    pre_identity_SP = sparse_identity(twoJ) # 注意spin-J 前面有 2J个qubit
+    suf_identity_SP = sparse_identity(nSP - (twoJ+1)) # 后面有 nSP - 2J -1 个qubit
     
     control_0_mat = kron(kron(pre_identity_SP, control_0_mat), suf_identity_SP)
     control_1_mat = kron(kron(pre_identity_SP, control_1_mat), suf_identity_SP)
@@ -236,15 +260,19 @@ function control_swap_4(nSP, nP, nSTAT, ctrla, octrlb, oper)
     return kron(kron(pre_mat, opermat), suf_mat)
 end
 
-function FirstTransform(nSP, nP, nSTAT, first_qubit)
-    print(nSP, nP, nSTAT, first_qubit)
+function FirstTransform(nSP, nP, nSTAT, first_qubit) # 原本的态存储在first_qubit上
     twoJ = 1
     state = nSP + nP + 1
-    ret_mat = kron(sparse([1,2], [2,1], [1, 1], 2, 2), sparse_identity(nSP+nP+nSTAT - 1))
+    ret_mat = kron(kron(sparse_identity(1), sparse([1,2], [2,1], [1, 1], 2, 2)), sparse_identity(nSP+nP+nSTAT - 2)) # 把 所有态都先标记为 2J = 1 的态
+
     oper_mat1 = kron(kron(sparse_identity(first_qubit - 1), sparse([1], [1], [1], 2, 2)), sparse_identity(nSP + nP + nSTAT - first_qubit))
-    oper_mat2 = kron(kron(kron(kron(sparse_identity(first_qubit - 1), sparse([2], [2], [1], 2, 2)), sparse_identity(state - first_qubit - 1)), sparse([1,2], [2,1], [1,1], 2, 2)), sparse_identity(nSTAT - 1))
-    oper_mat = oper_mat1 + oper_mat2
-    return oper_mat * ret_mat
+    oper_mat2 = kron(kron(kron(kron(sparse_identity(first_qubit - 1), sparse([2], [2], [1], 2, 2)), sparse_identity(state - first_qubit - 1)), sparse([1,2], [2,1], [1,1], 2, 2)), sparse_identity(nSP + nP + nSTAT - state))
+    oper_mat_1 = oper_mat1 + oper_mat2
+
+    oper_mat1 = kron(kron(sparse_identity(state - 1), sparse([1], [1], [1], 2, 2)), sparse_identity(nSP + nP + nSTAT - state))
+    oper_mat2 = kron(kron(kron(kron(sparse_identity(first_qubit - 1), sparse([1,2], [2,1], [1,1], 2, 2)), sparse_identity(state - first_qubit - 1)), sparse([2], [2], [1], 2, 2)), sparse_identity(nSP + nP + nSTAT - state))
+    oper_mat_2 = oper_mat1 + oper_mat2
+    return oper_mat_2 * oper_mat_1 * ret_mat
 end
 
 function Schur_Transform(n)
@@ -252,7 +280,7 @@ function Schur_Transform(n)
     nP = n
     nSTAT = convert(Int64, ceil(log2(n+1)))
     ret_mat = sparse_identity(nSP+nP+nSTAT)
-
+    
     ret_mat = FirstTransform(nSP, nP, nSTAT, nSP+1) * ret_mat
     for Time in 1:n-1
         # calculate which J is vaild
@@ -267,19 +295,32 @@ function Schur_Transform(n)
             end
         end
 
+        println("Before CG-Trans, Time= "," ", Time)
+        middle_test(ret_mat)
+
         for twoJ in nowJ
-            ret_mat = control_CG_transform(twoJ, nSP, nSTAT, nP, count_bits(twoJ), Time+1) * ret_mat
+            ret_mat = control_CG_transform(twoJ, nSP, nP, nSTAT, count_bits(twoJ), Time+1) * ret_mat # used 2J + 1 states, means log2(2J+1 - 1) qubits
             # ret_mat = noise_time_evolution * ret_mat  # Noise case
         end
         
+        println("Time= "," ", Time)
+        middle_test(ret_mat)
+
         for twoJ in nowJ
-            ret_mat = control_swap_1(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ+1) * ret_mat
-            ret_mat = control_swap_2(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ-1) * ret_mat
-            ret_mat = control_swap_3(nSP, nP, nSTAT, twoJ-1, nSP+Time+1, twoJ) * ret_mat
-            ret_mat = control_swap_4(nSP, nP, nSTAT, twoJ+1, nSP+Time+1, twoJ) * ret_mat
+            ret_mat = control_swap_1(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ + 2) * ret_mat # 第 (2J+1) 个qubit
+            if twoJ != 0
+                ret_mat = control_swap_2(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ) * ret_mat
+            end
+            if twoJ !=0
+                ret_mat = control_swap_3(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ + 1) * ret_mat
+            end
+            ret_mat = control_swap_4(nSP, nP, nSTAT, twoJ + 2, nSP+Time+1, twoJ + 1) * ret_mat
         end
     end
     return ret_mat
 end
 
-Schur_Transform(2)
+
+oper_mat = Schur_Transform(3)
+
+middle_test(oper_mat)
