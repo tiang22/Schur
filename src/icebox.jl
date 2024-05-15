@@ -15,7 +15,7 @@ function transinTwo(total_length, number)
 end
 
 function middle_test(oper_mat)
-    initial_state = sparse([2^(2) * 1 + 1], [1], [1], 2^(4 + 3 + 2), 1)
+    initial_state = sparse([2^(2) + 2^(3) + 1], [1], [1], 2^(4 + 3 + 2), 1)
     final_state = oper_mat * initial_state
     final_state = Matrix(final_state)
     for nz in range(1, size(final_state)[1])
@@ -330,7 +330,68 @@ function Schur_Transform(n)
     return ret_mat
 end
 
+function vaild_check(n, J, mu, nP)
+    if (n+J) % 2 !=0
+        return false
+    end
+    upper = (n+J) / 2
+    lower = (n-J) / 2
+    numbers = transinTwo(nP, mu)
+    s_upper = 0
+    s_lower = 0
+    for i in 1:nP
+        if numbers[i] == '1'
+            s_lower += 1
+        else
+            s_upper += 1
+        end
+        if s_lower > s_upper
+            return false
+        end
+    end
+    if s_upper != upper || s_lower != lower
+        return false
+    end
+    return true
+end
+
+function MatrixShow(n, mat)
+    nSP = n+1
+    nP = n
+    nSTAT = convert(Int64, ceil(log2(n+1)))
+    answer = zeros(2^n, 2^n)
+    for initial_state in 0:2^(n)-1
+        real_initial_state = initial_state * 2^(nSTAT)
+        input_state = sparse([real_initial_state + 1], [1], [1], 2^(nSP+nP+nSTAT), 1)
+        output_state = mat * input_state
+        output_state = Matrix(output_state)
+        cnt = 0
+        for J in (n):-1:0
+            for mu in 0:2^(nP)-1
+                if vaild_check(n, J, mu, nP)
+                    for ms in 0:(J)
+                        used_qubits = count_bits(J)
+                        real_output_state = 2^(nP+nSTAT+n-J) + mu * 2^(nSTAT) + ms * 2^(nSTAT - used_qubits)
+                        if output_state[real_output_state + 1][1] != 0
+                            answer[cnt + 1, initial_state + 1] = output_state[real_output_state + 1][1]
+                        end
+                        cnt = cnt + 1
+                    end
+                end
+            end
+        end
+    end
+    
+    rounded_answer = round.(answer, digits=3)
+    for row in eachrow(rounded_answer)
+        for element in row
+            print(element," ")
+        end
+        println()
+    end
+end
 
 oper_mat = Schur_Transform(3)
 
-middle_test(oper_mat)
+# middle_test(oper_mat)
+MatrixShow(3, oper_mat)
