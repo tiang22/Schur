@@ -1,11 +1,7 @@
-using LinearAlgebra
 using SparseArrays
-using DormandPrince
-using DocStringExtensions
+using LinearAlgebra
 
-include("outerprod.jl")
-include("simulator.jl")
-
+include("mylindblad.jl")
 
 using PyCall
 function transinTwo(total_length, number)
@@ -217,8 +213,15 @@ function control_CG_transform(twoJ, nSP, nP, nSTAT, usedSTAT, nowP)  # spin 2J i
     return ret_mat
 end
 
-function noise_time_evolution(nSP, nP, nSTAT, delta_t)
-    return sparse_identity(nSP + nP + nSTAT) # no noise firstly
+function noise_time_evolution(nSP, nP, nSTAT, rho, delta_t)
+    # return rho # no noise firstly
+
+    # noise model
+    C = sum([kron(kron(sparse_identity(i-1), sparse([1,2], [1,2], [1, -1], 2, 2)), sparse_identity(nSP+nP+nSTAT-i)) for i in 1:nSP+nP+nSTAT])
+    H = sparse_identity(nSP+nP+nSTAT)
+    tspan = (0.0, delta_t)
+
+    return Lindblad_equations(rho, H, C, tspan)
 end
 
 
@@ -305,16 +308,10 @@ function Schur_Transform(n)
             end
         end
 
-        println("Before CG-Trans, Time= "," ", Time)
-        middle_test(ret_mat)
-
         for twoJ in nowJ
             ret_mat = control_CG_transform(twoJ, nSP, nP, nSTAT, count_bits(twoJ), Time+1) * ret_mat # used 2J + 1 states, means log2(2J+1 - 1) qubits
             # ret_mat = noise_time_evolution * ret_mat  # Noise case
         end
-        
-        println("Time= "," ", Time)
-        middle_test(ret_mat)
 
         for twoJ in nowJ
             ret_mat = control_swap_1(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ + 2) * ret_mat # 第 (2J+1) 个qubit
@@ -328,6 +325,60 @@ function Schur_Transform(n)
         end
     end
     return ret_mat
+end
+
+function Noisy_Schur_Transform(n, input_state, delta_t)
+    nSP = n+1
+    nP = n
+    nSTAT = convert(Int64, ceil(log2(n+1)))
+    
+    dm = kron(input_state, input_state')
+
+    oper_mat = FirstTransform(nSP, nP, nSTAT, nSP+1)
+    dm = oper_mat * dm * oper_mat'
+    println("Yes")
+    dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+    for Time in 1:n-1
+        # calculate which J is vaild
+        println("Fixed input", " ", Time)
+        nowJ = []
+        if Time&1 == 1
+            for i in 1:2:Time
+                push!(nowJ, i)
+            end
+        else
+            for i in 0:2:Time
+                push!(nowJ, i)
+            end
+        end
+
+        for twoJ in nowJ
+            oper_mat = control_CG_transform(twoJ, nSP, nP, nSTAT, count_bits(twoJ), Time+1) # used 2J + 1 states, means log2(2J+1 - 1) qubits
+            dm = oper_mat * dm * oper_mat'
+            dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+        end
+        println("Fixed control transform", " ", Time)
+
+        for twoJ in nowJ
+            oper_mat = control_swap_1(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ + 2) # 第 (2J+1) 个qubit
+            dm = oper_mat * dm * oper_mat'
+            dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+            if twoJ != 0
+                oper_mat = control_swap_2(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ)
+                dm = oper_mat * dm * oper_mat'
+                dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+            end
+            if twoJ !=0
+                oper_mat = control_swap_3(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ + 1)
+                dm = oper_mat * dm * oper_mat'
+                dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+            end
+            oper_mat = control_swap_4(nSP, nP, nSTAT, twoJ + 2, nSP+Time+1, twoJ + 1)
+            dm = oper_mat * dm * oper_mat'
+            dm = noise_time_evolution(nSP, nP, nSTAT, dm, delta_t)
+        end
+    end
+    return dm
 end
 
 function vaild_check(n, J, mu, nP)
@@ -391,7 +442,27 @@ function MatrixShow(n, mat)
     end
 end
 
-oper_mat = Schur_Transform(3)
 
-# middle_test(oper_mat)
-MatrixShow(3, oper_mat)
+N=1
+nSP = N+1
+nP = N
+nSTAT = convert(Int64, ceil(log2(N+1)))
+# input_state = sparse([0 + 1 , 2^nSTAT + 1], [1, 1], [1/sqrt(2), 1/sqrt(2)], 2^(nSP + nP + nSTAT), 1)
+input_state = sparse([0 + 1], [1], [1], 2^(nSP + nP + nSTAT), 1)   
+
+oper_mat = Schur_Transform(N)
+sample_output_state = oper_mat * input_state
+sample_output_dm = kron(sample_output_state, sample_output_state')
+
+test_output_dm = Noisy_Schur_Transform(N, input_state, 0.3)
+
+for i in 1:size(test_output_dm)[1]
+    for j in 1:size(test_output_dm)[2]
+        if test_output_dm[i, j] != 0
+            println("i= ", i, " j= ", j, " value= ", test_output_dm[i, j])
+        end
+    end
+end
+delta_dm = test_output_dm - sample_output_dm
+
+l2_norm = norm(delta_dm, 2)
