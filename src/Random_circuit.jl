@@ -1,5 +1,3 @@
-module icebox 
-
 using SparseArrays
 using LinearAlgebra
 
@@ -219,13 +217,11 @@ function noise_time_evolution(nSP, nP, nSTAT, rho, delta_t)
     # return rho # no noise firstly
 
     # noise model
-    Gamma = (2)
-    C = sqrt(Gamma) * sum([kron(kron(sparse_identity(i-1), sparse([1,2], [1,2], [1, -1], 2, 2)), sparse_identity(nSP+nP+nSTAT-i)) for i in 1:nSP+nP+nSTAT])
+    C = sqrt(100000) * sum([kron(kron(sparse_identity(i-1), sparse([1,2], [1,2], [1, -1], 2, 2)), sparse_identity(nSP+nP+nSTAT-i)) for i in 1:nSP+nP+nSTAT])
     H = sparse_identity(nSP+nP+nSTAT)
     tspan = (0.0, delta_t)
 
-    return Lindblad_equations(rho, H, [C], tspan)
-    # return Stochastic_Master_equation(rho, H, [C], tspan)
+    return Lindblad_equations(rho, H, C, tspan)
 end
 
 
@@ -292,46 +288,7 @@ function FirstTransform(nSP, nP, nSTAT, first_qubit) # 原本的态存储在firs
     return oper_mat_2 * oper_mat_1 * ret_mat
 end
 
-function Schur_Transform(n)
-    nSP = n+1
-    nP = n
-    nSTAT = convert(Int64, ceil(log2(n+1)))
-    ret_mat = sparse_identity(nSP+nP+nSTAT)
-    
-    ret_mat = FirstTransform(nSP, nP, nSTAT, nSP+1) * ret_mat
-    for Time in 1:n-1
-        # calculate which J is vaild
-        nowJ = []
-        if Time&1 == 1
-            for i in 1:2:Time
-                push!(nowJ, i)
-            end
-        else
-            for i in 0:2:Time
-                push!(nowJ, i)
-            end
-        end
-
-        for twoJ in nowJ
-            ret_mat = control_CG_transform(twoJ, nSP, nP, nSTAT, count_bits(twoJ), Time+1) * ret_mat # used 2J + 1 states, means log2(2J+1 - 1) qubits
-            # ret_mat = noise_time_evolution * ret_mat  # Noise case
-        end
-
-        for twoJ in nowJ
-            ret_mat = control_swap_1(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ + 2) * ret_mat # 第 (2J+1) 个qubit
-            if twoJ != 0
-                ret_mat = control_swap_2(nSP, nP, nSTAT, twoJ + 1, nSP+Time+1, twoJ) * ret_mat
-            end
-            if twoJ !=0
-                ret_mat = control_swap_3(nSP, nP, nSTAT, twoJ, nSP+Time+1, twoJ + 1) * ret_mat
-            end
-            ret_mat = control_swap_4(nSP, nP, nSTAT, twoJ + 2, nSP+Time+1, twoJ + 1) * ret_mat
-        end
-    end
-    return ret_mat
-end
-
-function Noisy_Schur_Transform(n, input_state, delta_t)
+function Schur_Transform_Random(n, input_state, delta_t)
     nSP = n+1
     nP = n
     nSTAT = convert(Int64, ceil(log2(n+1)))
@@ -447,19 +404,18 @@ function MatrixShow(n, mat)
 end
 
 
-
-N=3
+N=2
 nSP = N+1
 nP = N
 nSTAT = convert(Int64, ceil(log2(N+1)))
 input_state = sparse([0 + 1 , 2^nSTAT + 1], [1, 1], [1/sqrt(2), 1/sqrt(2)], 2^(nSP + nP + nSTAT), 1)
 # input_state = sparse([0 + 1], [1], [1], 2^(nSP + nP + nSTAT), 1)   
 
-oper_mat = Schur_Transform(N)
+oper_mat = Schur_Transfor_random(N)
 sample_output_state = oper_mat * input_state
 sample_output_dm = kron(sample_output_state, sample_output_state')
 
-@time test_output_dm = Noisy_Schur_Transform(N, input_state, 0.03)
+test_output_dm = Noisy_Schur_Transform(N, input_state, 0.03)
 
 
 delta_dm = test_output_dm - sample_output_dm
@@ -472,5 +428,3 @@ for i in 1:size(delta_dm)[1]
 end
 
 l2_norm = norm(delta_dm, 2)
-
-end
