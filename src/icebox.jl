@@ -447,30 +447,58 @@ function MatrixShow(n, mat)
 end
 
 
+```
+input_state is a vector consists of 2-element tuples, the first element is the position of the state, the second element is the amplitude of the state. 
+The function Calculate_impact is used to calculate the impact of the noise on the input state.
+```
+function Calculate_impact(n, input_state, delta_t)
+    nSP = n+1
+    nP = n
+    nSTAT = convert(Int64, ceil(log2(n+1)))
 
-N=3
-nSP = N+1
-nP = N
-nSTAT = convert(Int64, ceil(log2(N+1)))
-input_state = sparse([0 + 1 , 2^nSTAT + 1], [1, 1], [1/sqrt(2), 1/sqrt(2)], 2^(nSP + nP + nSTAT), 1)
-# input_state = sparse([0 + 1], [1], [1], 2^(nSP + nP + nSTAT), 1)   
+    position = [t[1] for t in input_state]
+    amplitude = [t[2] for t in input_state]
+    amplitude = amplitude / sqrt(sum(conj(amplitude) .* amplitude))
+    input_state = sparse([1 + t * 2^nSTAT for t in position], [1 for i in 1:length(position)], amplitude, 2^(nSP+nP+nSTAT), 1)
 
-oper_mat = Schur_Transform(N)
-sample_output_state = oper_mat * input_state
-sample_output_dm = kron(sample_output_state, sample_output_state')
+    oper_mat = Schur_Transform(n)
+    sample_output_state = oper_mat * input_state
+    sample_output_dm = kron(sample_output_state, sample_output_state')
 
-@time test_output_dm = Noisy_Schur_Transform(N, input_state, 0.03)
+    @time test_output_dm = Noisy_Schur_Transform(N, input_state, delta_t)
 
-
-delta_dm = test_output_dm - sample_output_dm
-for i in 1:size(delta_dm)[1]
-    for j in 1:size(delta_dm)[2]
-        if delta_dm[i, j] != 0
-            println("i= ", i, " j= ", j, " value= ", delta_dm[i, j])
-        end
-    end
+    delta_dm = test_output_dm - sample_output_dm
+    l2_norm = norm(delta_dm, 2)
+    return l2_norm
 end
 
-l2_norm = norm(delta_dm, 2)
+# N=2
+# nSP = N+1
+# nP = N
+# nSTAT = convert(Int64, ceil(log2(N+1)))
+# input_state = sparse([0 + 1], [1], [1/sqrt(2)], 2^(nSP + nP + nSTAT), 1)
+
+# oper_mat = Schur_Transform(N)
+# sample_output_state = oper_mat * input_state
+# sample_output_dm = kron(sample_output_state, sample_output_state')
+
+# @time test_output_dm = Noisy_Schur_Transform(N, input_state, 0.03)
+
+
+# delta_dm = test_output_dm - sample_output_dm
+# for i in 1:size(delta_dm)[1]
+#     for j in 1:size(delta_dm)[2]
+#         if delta_dm[i, j] != 0
+#             println("i= ", i, " j= ", j, " value= ", delta_dm[i, j])
+#         end
+#     end
+# end
+
+# l2_norm = norm(delta_dm, 2)
+
+N = 2
+input_state = [(0, 1)]
+delta_t = 0.03
+Calculate_impact(N, input_state, delta_t)
 
 end
