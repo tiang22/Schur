@@ -328,6 +328,7 @@ function Schur_Transform(n)
 			ret_mat = control_swap_4(nSP, nP, nSTAT, twoJ + 2, nSP + Time + 1, twoJ + 1) * ret_mat
 		end
 	end
+	MatrixShow(n, ret_mat)
 	return ret_mat
 end
 
@@ -496,9 +497,20 @@ end
 # end
 
 # l2_norm = norm(delta_dm, 2)
+py"""
+import scipy
+def rand_unit(n):
+	U = scipy.stats.unitary_group.rvs(n)
+	return U[:,1]
+"""
 
 N = 2
-input_state = [(0, 1)]
+rand = py"rand_unit"(2^N)
+input_state = []
+for i in 1:2^N
+	append!(input_state, [(i - 1, rand[i])])
+end
+println(input_state)
 delta_t = 0.03
 println(Calculate_impact(N, input_state, delta_t))
 
