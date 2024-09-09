@@ -504,7 +504,7 @@ def rand_unit(n):
 	return U[:,1]
 """
 
-N = 2
+N = 4
 rand = py"rand_unit"(2^N)
 input_state = []
 for i in 1:2^N
